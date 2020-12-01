@@ -32,3 +32,6 @@ config QCOM_KGSL_TURBO
 	default n
 	depends on QCOM_KGSL
 
+config CORESIGHT_ADRENO
+	bool
+	default y if QCOM_KGSL=y && CORESIGHT=y
