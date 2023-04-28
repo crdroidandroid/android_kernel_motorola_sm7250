@@ -2367,13 +2367,18 @@ static void unqueue_me_pi(struct futex_q *q)
 	spin_unlock(q->lock_ptr);
 }
 
-static int __fixup_pi_state_owner(u32 __user *uaddr, struct futex_q *q,
-				  struct task_struct *argowner)
+static int fixup_pi_state_owner(u32 __user *uaddr, struct futex_q *q,
+				struct task_struct *argowner)
 {
-	u32 uval, uninitialized_var(curval), newval, newtid;
 	struct futex_pi_state *pi_state = q->pi_state;
+	u32 uval, uninitialized_var(curval), newval;
 	struct task_struct *oldowner, *newowner;
-	int err = 0;
+	u32 newtid;
+	int ret, err = 0;
+
+	lockdep_assert_held(q->lock_ptr);
+
+	raw_spin_lock_irq(&pi_state->pi_mutex.wait_lock);
 
 	oldowner = pi_state->owner;
 
@@ -2407,12 +2412,14 @@ retry:
 			 * We raced against a concurrent self; things are
 			 * already fixed up. Nothing to do.
 			 */
-			return 0;
+			ret = 0;
+			goto out_unlock;
 		}
 
 		if (__rt_mutex_futex_trylock(&pi_state->pi_mutex)) {
 			/* We got the lock. pi_state is correct. Tell caller. */
-			return 1;
+			ret = 1;
+			goto out_unlock;
 		}
 
 		/*
@@ -2439,7 +2446,8 @@ retry:
 			 * We raced against a concurrent self; things are
 			 * already fixed up. Nothing to do.
 			 */
-			return 1;
+			ret = 1;
+			goto out_unlock;
 		}
 		newowner = argowner;
 	}
@@ -2470,6 +2478,7 @@ retry:
 	 * itself.
 	 */
 	pi_state_update_owner(pi_state, newowner);
+	raw_spin_unlock_irq(&pi_state->pi_mutex.wait_lock);
 
 	return argowner == current;
 
@@ -2492,16 +2501,17 @@ handle_err:
 
 	switch (err) {
 	case -EFAULT:
-		err = fault_in_user_writeable(uaddr);
+		ret = fault_in_user_writeable(uaddr);
 		break;
 
 	case -EAGAIN:
 		cond_resched();
-		err = 0;
+		ret = 0;
 		break;
 
 	default:
 		WARN_ON_ONCE(1);
+		ret = err;
 		break;
 	}
 
@@ -2511,26 +2521,17 @@ handle_err:
 	/*
 	 * Check if someone else fixed it for us:
 	 */
-	if (pi_state->owner != oldowner)
-		return argowner == current;
+	if (pi_state->owner != oldowner) {
+		ret = argowner == current;
+		goto out_unlock;
+	}
 
-	/* Retry if err was -EAGAIN or the fault in succeeded */
-	if (!err)
-		goto retry;
+	if (ret)
+		goto out_unlock;
 
-	return err;
-}
+	goto retry;
 
-static int fixup_pi_state_owner(u32 __user *uaddr, struct futex_q *q,
-				struct task_struct *argowner)
-{
-	struct futex_pi_state *pi_state = q->pi_state;
-	int ret;
-
-	lockdep_assert_held(q->lock_ptr);
-
-	raw_spin_lock_irq(&pi_state->pi_mutex.wait_lock);
-	ret = __fixup_pi_state_owner(uaddr, q, argowner);
+out_unlock:
 	raw_spin_unlock_irq(&pi_state->pi_mutex.wait_lock);
 	return ret;
 }
