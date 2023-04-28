@@ -2588,10 +2588,14 @@ static int fixup_owner(u32 __user *uaddr, struct futex_q *q, int locked)
 
 	/*
 	 * Paranoia check. If we did not take the lock, then we should not be
-	 * the owner of the rt_mutex. Warn and establish consistent state.
+	 * the owner of the rt_mutex.
 	 */
-	if (WARN_ON_ONCE(rt_mutex_owner(&q->pi_state->pi_mutex) == current))
-		return fixup_pi_state_owner(uaddr, q, current);
+	if (rt_mutex_owner(&q->pi_state->pi_mutex) == current) {
+		printk(KERN_ERR "fixup_owner: ret = %d pi-mutex: %p "
+				"pi-state %p\n", ret,
+				q->pi_state->pi_mutex.owner,
+				q->pi_state->owner);
+	}
 
 	return 0;
 }
