@@ -323,9 +323,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	if (device_property_read_bool(&pdev->dev, "xhci-hw-lpm-disable"))
 		xhci->quirks |= XHCI_HW_LPM_DISABLE;
 
-	if (device_property_read_bool(&pdev->dev, "xhci-hw-lpm-disable"))
-		xhci->quirks |= XHCI_HW_LPM_DISABLE;
-
 	/* imod_interval is the interrupt moderation value in nanoseconds. */
 	xhci->imod_interval = 40000;
 
